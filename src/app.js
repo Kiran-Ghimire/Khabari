@@ -12,7 +12,7 @@ let startServer = async () => {
       console.log(err);
       return;
     }
-    console.log(`Express running at port: ${config.port} -> ${config.cmsUrl}`);
+    console.log(`Express running at port: ${config.port} -> ${config.projectUrl}`);
   });
 };
 startServer();

@@ -1,29 +1,13 @@
 const { validationResult } = require("express-validator");
 const randtoken = require("rand-token");
 const bcrypt = require("bcryptjs");
+const nodemailer = require("nodemailer");
 
-const { adminService, emailService } = require("../services");
+const { userService, emailService } = require("../services");
 const config = require("../config");
-const { adminModel } = require("../models");
+const { userModel } = require("../models");
 
 let loginController = {
-  // authToggle: async(req, res, fn) => {
-  //     const currentUser = req.session.user._id;
-  //     const {authToggle} = req.body;
-  //     console.log(req.body);
-  //     try {
-  //         let admin = await adminModel.findById(currentUser);
-
-  //         if(admin){
-  //             admin.two_way_auth = authToggle;
-  //             await admin.save();
-
-  //         }
-  //     } catch(error) {
-  //         fn(error);
-  //     }
-  // },
-
   forgotPassword: async (req, res, fn) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
@@ -32,33 +16,62 @@ let loginController = {
       return res.redirect("/forgot-password");
     }
     try {
-      let admin = await adminService.findOne({ email: req.body.email });
-      if (admin) {
+      let user = await userService.findOne({ email: req.body.email });
+      if (user) {
         let token = randtoken.generate(10);
         let expiryDate = new Date().getTime() + config.token.expiry;
         let updateData = {
           reset_password_token: token,
           reset_password_expires: new Date(expiryDate),
         };
-        await adminService.findOneAndUpdate(
+        await userService.findOneAndUpdate(
           { email: req.body.email },
           updateData
         );
 
-        let mailData = {
+        let resetLink = config.projectUrl + "reset-password/" + token;
+        const mailData =
+          `
+            <p>Dear  ` +
+          user.username +
+          `, </p>
+            <p>Your have requested to recover password for you account. Your  token is given below. Token will be valid for 1 day only.  </p>
+           
+            <ul>
+                <li>Token: ` +
+          token +
+          `</li>
+          <li>Link: ` +
+          resetLink +
+          `</li>
+            </ul>
+            <p><strong>This is an automatically generated mail. Please do not reply back.</strong></p>
+            
+            <p>Regards,</p>
+            <p>H Manager</p>
+        `;
+
+        const transporter = nodemailer.createTransport({
+          service: "gmail",
+          auth: {
+            user: config.mail.mailUser,
+            pass: config.mail.mailPassword,
+          },
+        });
+
+        const mailOptions = {
+          from: "n4scent9@gmail.com",
           to: req.body.email,
-          subject: "Password Reset",
+          subject: "Forgot Password", // Subject line
+          html: mailData, // plain text body
         };
-        let resetLink = config.cmsUrl + "reset-password/" + token;
-        mailData["html"] =
-          "Dear " +
-          admin.username +
-          ",<br><br>Your have requested to recover password for you account. Please click the link below to reset your password. Link will be valid for 1 day only. <br><b>Link: </b><a href='" +
-          resetLink +
-          "'>" +
-          resetLink +
-          "</a><br>Thank you.";
-        await emailService.sendEmail(mailData);
+
+        transporter.sendMail(mailOptions, function (err, info) {
+          if (err) {
+            return console.log(err);
+          }
+          console.log("MAILINFO", info);
+        });
       } else {
         return res
           .status(404)
@@ -72,43 +85,28 @@ let loginController = {
       fn(e);
     }
   },
-  // resetPasswordView : async(req, res, fn) => {
-  //     let token = req.params.token;
-  //     try {
-  //         let currentDate = new Date();
-  //         let admin = await adminService.findOne({'reset_password_token': token});
-  //         if (admin && admin.reset_password_token==token && currentDate < admin.reset_password_expires) {
-  //             logCrmEvents(req, "Page Visit", "success", {message: "Reset Password Page"});
-  //             return res.render('auth/reset-password', {layout: false, token: req.params.token});
-  //         } else {
-  //             req.flash('error_msg', 'Reset link is invalid or expired.');
-  //             return res.redirect("/login");
-  //         }
-  //     } catch(e) {
-  //         fn(e);
-  //     }
-  // },
+
   resetPassword: async (req, res, fn) => {
     let token = req.params.token;
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      req.flash("errors", errors.mapped());
-      return res.redirect("/reset-password/" + token);
+      // req.flash("errors", errors.mapped());
+      return res.status(404).json({ Error: "Error" });
     }
     try {
       let currentDate = new Date();
-      let admin = await adminService.findOne({ reset_password_token: token });
+      let user = await userService.findOne({ reset_password_token: token });
       if (
-        admin &&
-        admin.reset_password_token == token &&
-        currentDate < admin.reset_password_expires
+        user &&
+        user.reset_password_token == token &&
+        currentDate < user.reset_password_expires
       ) {
         let hashPassword = await bcrypt.hashSync(
           req.body.password,
           bcrypt.genSaltSync(10),
           null
         );
-        await adminService.findOneAndUpdate(
+        await userService.findOneAndUpdate(
           { reset_password_token: token },
           {
             password: hashPassword,
@@ -117,10 +115,6 @@ let loginController = {
             reset_password_expires: null,
           }
         );
-        // req.flash("success_msg", "Password reset successful");
-        // logCrmEvents(req, "Event", "success", {
-        //   message: "Password reset successful",
-        // });
         return res
           .status(200)
           .json({ Success: true, message: "Password reset successfull" });

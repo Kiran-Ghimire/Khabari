@@ -1,4 +1,4 @@
 module.exports = {
-    'adminService': require('./adminService'),
-    'emailService': require('./emailService'),
+  userService: require("./userService"),
+  emailService: require("./emailService"),
 };

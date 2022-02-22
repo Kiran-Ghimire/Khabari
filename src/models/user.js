@@ -4,7 +4,7 @@ const bcrypt = require("bcryptjs");
 const mongoose = require("mongoose");
 const Schema = mongoose.Schema;
 
-let adminSchema = new Schema({
+let userSchema = new Schema({
   email: { type: String, unique: true, index: true },
   username: { type: String, unique: true, index: true },
   password: { type: String },
@@ -28,13 +28,13 @@ let adminSchema = new Schema({
   updated_at: { type: Date, default: Date.now },
 });
 
-adminSchema.pre("save", function (next) {
-  let admin = this;
-  if (!admin.isModified("password")) {
+userSchema.pre("save", function (next) {
+  let user = this;
+  if (!user.isModified("password")) {
     return next();
   }
 
-  admin.password = generateHash(admin.password);
+  user.password = generateHash(user.password);
   next();
 });
 
@@ -42,11 +42,11 @@ let generateHash = (password) => {
   return bcrypt.hashSync(password, bcrypt.genSaltSync(10), null);
 };
 
-adminSchema.methods.validPassword = function (password) {
+userSchema.methods.validPassword = function (password) {
   return bcrypt.compareSync(password, this.password);
 };
 
-adminSchema.set("toObject", { virtuals: true });
-adminSchema.set("toJSON", { virtuals: true });
+userSchema.set("toObject", { virtuals: true });
+userSchema.set("toJSON", { virtuals: true });
 
-module.exports = mongoose.model("Admin", adminSchema);
+module.exports = mongoose.model("User", userSchema);

@@ -1,1 +1,1 @@
-module.exports = Object.assign({}, require("./adminValidator"));
+module.exports = Object.assign({}, require("./userValidator"));

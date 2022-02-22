@@ -3,12 +3,12 @@ const moment = require("moment");
 
 const { translationModel } = require("../models");
 // const { formatDate } = require('../helpers');
-const cmsTitle = require("../config").cmsTitle;
+const projectTitle = require("../config").projectTitle;
 
 let localFunctionLoader = {};
 localFunctionLoader.init = async (app) => {
   app.locals._ = _;
-  app.locals.cmsTitle = cmsTitle;
+  app.locals.projectTitle = projectTitle;
 
   const memorizeTranslateWords = [];
   app.locals.translateLanguage = (variable, translationData) => {

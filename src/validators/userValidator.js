@@ -1,6 +1,6 @@
 const { checkSchema } = require("express-validator/check");
 
-const { adminModel } = require("../models");
+const { userModel } = require("../models");
 
 let changePasswordValidation = checkSchema({
   password: {
@@ -39,7 +39,7 @@ let changePasswordValidation = checkSchema({
   },
 });
 
-let forgotAdminPasswordValidation = checkSchema({
+let forgotUserPasswordValidation = checkSchema({
   email: {
     isLength: {
       errorMessage: "Email is required",
@@ -51,10 +51,10 @@ let forgotAdminPasswordValidation = checkSchema({
     custom: {
       options: async (value) => {
         return new Promise((resolve, reject) => {
-          adminModel
+          userModel
             .findOne({ email: value })
-            .then((admin) => {
-              if (admin === null) {
+            .then((user) => {
+              if (user === null) {
                 reject("Email address does not exist");
               } else {
                 resolve(true);
@@ -69,7 +69,7 @@ let forgotAdminPasswordValidation = checkSchema({
   },
 });
 
-let resetAdminPasswordValidation = checkSchema({
+let resetUserPasswordValidation = checkSchema({
   password: {
     isLength: {
       errorMessage: "Password is required",
@@ -108,6 +108,6 @@ let resetAdminPasswordValidation = checkSchema({
 
 module.exports = {
   changePasswordValidation,
-  forgotAdminPasswordValidation,
-  resetAdminPasswordValidation,
+  forgotUserPasswordValidation,
+  resetUserPasswordValidation,
 };

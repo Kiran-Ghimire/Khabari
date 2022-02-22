@@ -3,6 +3,7 @@ const mongoose = require("mongoose");
 const ExpressBrute = require("express-brute");
 const MongoStore = require("express-brute-mongo");
 const moment = require("moment");
+const nodemailer = require("nodemailer");
 const cors = require("cors");
 const randtoken = require("rand-token");
 const config = require("../config");
@@ -11,16 +12,17 @@ const {
   // dashboardController,
   // profileController,
 } = require("../controllers");
-const { adminService, emailService } = require("../services");
+const { userService, emailService } = require("../services");
 
 const {
-  forgotAdminPasswordValidation,
-  resetAdminPasswordValidation,
+  forgotUserPasswordValidation,
+  resetUserPasswordValidation,
 } = require("../validators");
 const authenticateUser = require("../middlewares/backend/authenticateMiddleware");
 // const { logCrmEvents, translateWord, logLoginEvents } = require("../helpers");
 // const { clientMiddleware } = require("../middlewares/api/clientMiddleware");
-const { adminModel } = require("../models");
+const { transporter } = require("../helpers/nodemailer");
+const { userModel } = require("../models");
 
 // const api = require("./api/v1");
 // const roles = require("./roles");
@@ -71,16 +73,11 @@ let globalBruteforce = new ExpressBrute(store, {
 });
 
 module.exports = (app, passport) => {
-  // app.get("/", [authenticateUser.guest], authController.login);
-  // app.get("/login", [authenticateUser.guest], authController.login);
   app.get("/signup", async (req, res) => {
     res.send("Hello");
   });
-  // app.put("/toggle-auth", authController.authToggle);
-
   app.post("/signup", async (req, res, fn) => {
     try {
-      // let passwordMethod = req.body.password_method;
       let newUser = {
         email: req.body.email,
         password: req.body.password,
@@ -93,10 +90,15 @@ module.exports = (app, passport) => {
         dob: req.body.dob,
         created_at: new Date(),
       };
-      console.log("HEYO", newUser);
-      const adminAdd = await adminService.add(newUser);
-      console.log("adminSIGNUP", adminAdd);
-      if (!adminAdd.verify_user) {
+      const emailCheck = await userService.findOne({ email: newUser.email });
+      if (emailCheck) {
+        return res
+          .status(404)
+          .json({ success: false, message: "Email already in use" });
+      }
+      const userAdd = await userService.add(newUser);
+      console.log("userSIGNUP", userAdd);
+      if (!userAdd.verify_user) {
         let token = randtoken.generate(10);
 
         let expiryDate = new Date().getTime() + config.token.expiry;
@@ -104,23 +106,52 @@ module.exports = (app, passport) => {
           verify_user_token: token,
           verify_user_token_expires: new Date(expiryDate),
         };
-        await adminService.findOneAndUpdate({ _id: adminAdd._id }, updateData);
+        await userService.findOneAndUpdate({ _id: userAdd._id }, updateData);
+        const mailData =
+          `
+            <p>Dear  ` +
+          userAdd.username +
+          `, </p>
+            <p>Thanks for sign up. Your verification token is given below :  </p>
+           
+            <ul>
+                <li>Token: ` +
+          token +
+          `</li>
+            </ul>
+            <p>verify Link: <a href="http://localhost:3000/verifyuser/:id">Verify</a></p>
+            
+            <p><strong>This is an automatically generated mail. Please do not reply back.</strong></p>
+            
+            <p>Regards,</p>
+            <p>H Manager</p>
+        `;
 
-        let mailData = {
-          to: adminAdd.email,
-          subject: "Verify User",
+        const transporter = nodemailer.createTransport({
+          service: "gmail",
+          auth: {
+            user: config.mail.mailUser,
+            pass: config.mail.mailPassword,
+          },
+        });
+
+        const mailOptions = {
+          from: "n4scent9@gmail.com",
+          to: userAdd.email,
+          subject: "Email Verification", // Subject line
+          html: mailData, // plain text body
         };
 
-        mailData["html"] =
-          "Dear " +
-          adminAdd.username +
-          ",<br><br>Your have requested to verify your account. Your token is: <br><b>Token: </b>" +
-          token +
-          "<br>Thank you.";
-        await emailService.sendEmail(mailData);
+        transporter.sendMail(mailOptions, function (err, info) {
+          if (err) {
+            return console.log(err);
+          }
+          console.log("MAILINFO", info);
+        });
+
         return res.status(201).json({
           Success: true,
-          adminAdd: adminAdd,
+          userAdd: userAdd,
         });
       }
     } catch (e) {
@@ -137,19 +168,11 @@ module.exports = (app, passport) => {
           verify_user_token_expires: null,
         };
 
-        await adminService.findOneAndUpdate({ _id: user._id }, updateData);
-        // let userDetail = await adminModel.findOne({ _id: user._id }).exec();
-        // req.session.user = userDetail;
-        // logCrmEvents(req, "Event", "success", { message: "Login Successful" });
-        // logLoginEvents(req, "Login", "success", {
-        //   message: "has successfully logged in",
-        // });
+        await userService.findOneAndUpdate({ _id: user._id }, updateData);
         return res
           .status(200)
           .json({ Success: true, message: "User verified" });
       } else {
-        // let msg = "Reset link is invalid or expired.";
-        // req.flash("error_msg", msg);
         return res
           .status(404)
           .json({ Success: false, message: "User not verified" });
@@ -157,86 +180,98 @@ module.exports = (app, passport) => {
     })(req, res, next);
   });
 
-  app.post(
-    "/login",
-    // globalBruteforce.prevent,
-    // userBruteforce.getMiddleware({
-    //   key: function (req, res, next) {
-    //     // prevent too many attempts for the same username
-    //     next(req.body.username);
-    //   },
-    // }),
-    async (req, res, fn) => {
-      try {
-        let admin = await adminService.findOne({ email: req.body.email });
+  app.post("/login", async (req, res, fn) => {
+    try {
+      let user = await userService.findOne({ email: req.body.email });
 
-        if (!admin) {
-          return res
-            .status(404)
-            .json({ success: false, message: "User doesnot exist" });
-        }
-        if (!admin.validPassword(req.body.password)) {
-          return res
-            .status(404)
-            .json({ success: false, message: "Wrong password" });
-          // return res.redirect("/login");
-        }
-
-        if (!admin.verify_user) {
-          return res
-            .status(404)
-            .json({ success: false, message: "Please verify user." });
-        }
-
-        if (admin && !admin.two_way_auth) {
-          let userDetail = await adminModel.findOne({ _id: admin._id });
-          console.log("USERDETAIL", userDetail);
-          req.session.user = userDetail;
-          //resets previous brute retries on successful login
-          // req.brute.reset(() => {
-          //   return res.status(200).json({ "Login" :"Success"});
-          // });
-          return res
-            .status(200)
-            .json({ success: true, message: "login successfully" });
-
-          // eslint-disable-next-line no-empty
-        } else if (admin && admin.two_way_auth) {
-          let token = randtoken.generate(10);
-
-          let expiryDate = new Date().getTime() + config.token.expiry;
-          let updateData = {
-            verify_login_token: token,
-            verify_login_token_expires: new Date(expiryDate),
-          };
-          await adminService.findOneAndUpdate({ _id: admin._id }, updateData);
-
-          let mailData = {
-            to: admin.email,
-            subject: "Verify User",
-          };
-
-          mailData["html"] =
-            "Dear " +
-            admin.username +
-            ",<br><br>Your have requested to verify your account. Your token is: <br><b>Token: </b>" +
-            token +
-            "<br>Thank you.";
-          await emailService.sendEmail(mailData);
-          // req.brute.reset(() => {
-          //   return res.redirect(`/verifylogin/${admin._id}`);
-          // });
-          return res.status(200).json({
-            success: true,
-            message:
-              "login successfully now just add the token provided on mail",
-          });
-        }
-      } catch (e) {
-        fn("Errorrrrrrr", e);
+      if (!user) {
+        return res
+          .status(404)
+          .json({ success: false, message: "User doesnot exist" });
       }
+      if (!user.validPassword(req.body.password)) {
+        return res
+          .status(404)
+          .json({ success: false, message: "Wrong password" });
+      }
+
+      if (!user.verify_user) {
+        return res
+          .status(404)
+          .json({ success: false, message: "Please verify user." });
+      }
+
+      if (user && !user.two_way_auth) {
+        let userDetail = await userModel.findOne({ _id: user._id });
+        console.log("USERDETAIL", userDetail);
+        req.session.user = userDetail;
+        return res.status(200).json({
+          success: true,
+          message: "login successfully",
+          data: userDetail,
+        });
+
+        // eslint-disable-next-line no-empty
+      } else if (user && user.two_way_auth) {
+        let token = randtoken.generate(10);
+
+        let expiryDate = new Date().getTime() + config.token.expiry;
+        let updateData = {
+          verify_login_token: token,
+          verify_login_token_expires: new Date(expiryDate),
+        };
+        await userService.findOneAndUpdate({ _id: user._id }, updateData);
+        const mailData =
+          `
+            <p>Dear  ` +
+          user.username +
+          `, </p>
+            <p>Thanks for log in. Your verification token is given below :  </p>
+           
+            <ul>
+                <li>Token: ` +
+          token +
+          `</li>
+            </ul>
+            <p>verify Link: <a href="http://localhost:3000/verifylogin/:id">Verify</a></p>
+            
+            <p><strong>This is an automatically generated mail. Please do not reply back.</strong></p>
+            
+            <p>Regards,</p>
+            <p>H Manager</p>
+        `;
+
+        const transporter = nodemailer.createTransport({
+          service: "gmail",
+          auth: {
+            user: config.mail.mailUser,
+            pass: config.mail.mailPassword,
+          },
+        });
+
+        const mailOptions = {
+          from: "n4scent9@gmail.com",
+          to: user.email,
+          subject: "Login Verification", // Subject line
+          html: mailData, // plain text body
+        };
+
+        transporter.sendMail(mailOptions, function (err, info) {
+          if (err) {
+            return console.log(err);
+          }
+          console.log("MAILINFO", info);
+        });
+
+        return res.status(200).json({
+          success: true,
+          message: "login successfully now just add the token provided on mail",
+        });
+      }
+    } catch (e) {
+      fn("Errorrrrrrr", e);
     }
-  );
+  });
 
   // app.get("/verifylogin/:id", authController.verifyLoginView);
   app.post("/verifylogin/:id", async (req, res, next) => {
@@ -247,12 +282,14 @@ module.exports = (app, passport) => {
           verify_login_token_expires: null,
         };
 
-        await adminService.findOneAndUpdate({ _id: user._id }, updateData);
-        let userDetail = await adminModel.findOne({ _id: user._id }).exec();
+        await userService.findOneAndUpdate({ _id: user._id }, updateData);
+        let userDetail = await userModel.findOne({ _id: user._id }).exec();
         req.session.user = userDetail;
-        return res
-          .status(200)
-          .json({ Success: true, message: "Login Successfull" });
+        console.log("USERDETAIL", userDetail);
+        return res.status(200).json({
+          Success: true,
+          message: "Login Successfull",
+        });
       } else {
         return res
           .status(404)
@@ -264,13 +301,13 @@ module.exports = (app, passport) => {
   // app.get("/forgot-password", authController.forgotPasswordView);
   app.post(
     "/forgot-password",
-    [forgotAdminPasswordValidation],
+    [forgotUserPasswordValidation],
     authController.forgotPassword
   );
   // app.get("/reset-password/:token", authController.resetPasswordView);
   app.post(
     "/reset-password/:token",
-    [resetAdminPasswordValidation],
+    [resetUserPasswordValidation],
     authController.resetPassword
   );
   // app.get("/logout", [authenticateUser.isLoggedIn], authController.logout);
@@ -319,6 +356,6 @@ module.exports = (app, passport) => {
   });
 
   app.get("*", function (req, res) {
-    return res.redirect("404");
+    return res.status("404");
   });
 };

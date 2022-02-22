@@ -3,7 +3,7 @@ const LocalStrategy = require("passport-local").Strategy;
 const BearerStrategy = require("passport-http-bearer").Strategy;
 const CustomStrategy = require("passport-custom").Strategy;
 
-const { adminModel, accessTokenModel, userModel } = require("../models");
+const { accessTokenModel, userModel } = require("../models");
 
 module.exports = (passport) => {
   passport.serializeUser((user, done) => {
@@ -11,7 +11,7 @@ module.exports = (passport) => {
   });
 
   passport.deserializeUser((id, done) => {
-    adminModel.findById(id, function (err, user) {
+    userModel.findById(id, function (err, user) {
       done(err, user);
     });
   });
@@ -19,7 +19,7 @@ module.exports = (passport) => {
   passport.use(
     "custom",
     new CustomStrategy((req, done) => {
-      adminModel.findOne(
+      userModel.findOne(
         { verify_login_token: req.body.token },
         async (err, user) => {
           if (err) {
@@ -37,7 +37,7 @@ module.exports = (passport) => {
   passport.use(
     "custom-signup",
     new CustomStrategy((req, done) => {
-      adminModel.findOne(
+      userModel.findOne(
         { verify_user_token: req.body.token },
         async (err, user) => {
           if (err) {
@@ -54,7 +54,7 @@ module.exports = (passport) => {
 
   passport.use(
     new LocalStrategy((username, password, done) => {
-      adminModel.findOne({ username: username }, async (err, user) => {
+      userModel.findOne({ username: username }, async (err, user) => {
         if (err) {
           return done(null, false, { error: err });
         }
